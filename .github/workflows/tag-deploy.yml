@@ -2,9 +2,6 @@ name: 'Release deploy workflow'
 
 on: 
   workflow_dispatch:
-  # push:
-  # tags:
-  #   - **
 
 jobs:
 
@@ -96,26 +93,32 @@ jobs:
 
     - name: 'Preparations before keystore fetching'
       run: | 
-        mkdir keystore
+        set -e
+        mkdir -p keystore || { echo 'Failed to create keystore directory'; exit 1; }
 
     - name: 'Getting keystore'
       uses: actions/checkout@v3  
       with:
         repository: amnezia-vpn/amnezia-android-certificates
+        token: ${{ secrets.GITHUB_TOKEN }}
         ssh-key: ${{ secrets.ANDROID_CERTS_SSH_PRIVATE_KEY }}
         path: keystore
+      continue-on-error: true
 
     - name: 'Setup ccache'
       uses: hendrikmuhs/ccache-action@v1.2
+      continue-on-error: true
 
     - name: 'Setup Java'
       uses: actions/setup-java@v3
       with:
         distribution: 'temurin'
         java-version: '11'
+      continue-on-error: true
 
     - name: 'Build project'
       run: |
+        set -e
         export QT_HOST_PATH="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64"
         export NDK_VERSION=23c
         export ANDROID_NDK_PLATFORM=android-23
@@ -123,25 +126,32 @@ jobs:
         export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
 
         if [ ! -f $ANDROID_NDK_ROOT/ndk-build ]; then 
-          wget https://dl.google.com/android/repository/android-ndk-r${NDK_VERSION}-linux.zip -qO ${{ runner.temp }}/ndk.zip &&
-          unzip -q -d ${{ runner.temp }} ${{ runner.temp }}/ndk.zip ; 
+          wget https://dl.google.com/android/repository/android-ndk-r${NDK_VERSION}-linux.zip -qO ${{ runner.temp }}/ndk.zip || { echo 'Failed to download NDK'; exit 1; }
+          unzip -q -d ${{ runner.temp }} ${{ runner.temp }}/ndk.zip || { echo 'Failed to unzip NDK'; exit 1; };
         fi
 
         export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a/bin
-        cd main
-        bash deploy/build_android.sh
+        cd main || { echo 'Failed to change directory to main'; exit 1; }
+        bash deploy/build_android.sh || { echo 'Build failed'; exit 1; }
 
     - name: 'Signing APK'
       run: |
+        set -e
         pwd
 
         ANDROID_BUILD_TOOLS_VERSION=30.0.3
 
-        ${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/zipalign -f -v 4 AmneziaVPN-release-unsigned.apk AmneziaVPN-release-aligned.apk
-        ${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/apksigner sign --out AmneziaVPN-release-signed.apk --ks keystore/debug.keystore --ks-key-alias ${{ secrets.DEBUG_ANDROID_KEYSTORE_KEY_ALIAS }} --ks-pass pass:${{secrets.DEBUG_ANDROID_KEYSTOTE_KEY_PASS }} AmneziaVPN-release-aligned.apk
+        ${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/zipalign -f -v 4 main/build/outputs/apk/release/AmneziaVPN-release-unsigned.apk AmneziaVPN-release-aligned.apk || { echo 'Zipalign failed'; exit 1; }
+        ${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/apksigner sign \
+          --ks keystore/debug.keystore \
+          --ks-key-alias "${{ secrets.DEBUG_ANDROID_KEYSTORE_KEY_ALIAS }}" \
+          --ks-pass env:DEBUG_KEYSTORE_PASS \
+          --out AmneziaVPN-release-signed.apk \
+          AmneziaVPN-release-aligned.apk || { echo 'APK signing failed'; exit 1; }
 
     - name: 'Upload'
       uses: actions/upload-artifact@v3
       with:
         name: Release APK
-        path: ${{ runner.temp }}/main/AmneziaVPN-release-signed.apk
+        path: AmneziaVPN-release-signed.apk
+      continue-on-error: true
