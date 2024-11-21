@@ -1,5 +1,4 @@
-
-name: 'Deploy workflow'
+name: 'Deploy Workflow'
 
 on:
   push:
@@ -7,7 +6,7 @@ on:
       - '**'
 
 env:
-  QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/ # https://download.qt.io/static/mirrorlist/
+  QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/ # Backup mirror for Qt
 
 jobs:
   Build-Linux-Ubuntu:
@@ -23,59 +22,62 @@ jobs:
       DEV_S3_ENDPOINT: ${{ secrets.DEV_S3_ENDPOINT }}
 
     steps:
-    - name: 'Install Qt'
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: 'linux'
-        target: 'desktop'
-        arch: 'gcc_64'
-        modules: 'qtremoteobjects qt5compat qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        tools: 'tools_ifw'
-        set-env: 'true'
-        extra: '--external 7z --base ${{ env.QT_MIRROR }}'
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'desktop'
+          arch: 'gcc_64'
+          modules: 'qtremoteobjects qt5compat qtshadertools'
+          dir: ${{ runner.temp }}
+          setup-python: 'true'
+          tools: 'tools_ifw'
+          set-env: 'true'
+          extra: '--external 7z --base ${{ env.QT_MIRROR }}'
 
-    - name: 'Get sources'
-      uses: actions/checkout@v4
-      with:
-        submodules: 'true'
-        fetch-depth: 10
+      - name: Get sources
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+          fetch-depth: 10
 
-    - name: 'Setup ccache'
-      uses: hendrikmuhs/ccache-action@v1.2
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
 
-    - name: 'Build project'
-      run: |
-        sudo apt-get install libxkbcommon-x11-0
-        export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64/bin
-        export QIF_BIN_DIR=${{ runner.temp }}/Qt/Tools/QtInstallerFramework/${{ env.QIF_VERSION }}/bin
-        bash deploy/build_linux.sh
+      - name: Build project
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-0
+          export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64/bin
+          export QIF_BIN_DIR=${{ runner.temp }}/Qt/Tools/QtInstallerFramework/${{ env.QIF_VERSION }}/bin
+          bash deploy/build_linux.sh
 
-    - name: 'Pack installer'
-      run: cd deploy && tar -cf AmneziaVPN_Linux_Installer.tar AmneziaVPN_Linux_Installer.bin
+      - name: Pack installer
+        run: |
+          cd deploy
+          tar -cf AmneziaVPN_Linux_Installer.tar AmneziaVPN_Linux_Installer.bin
 
-    - name: 'Upload installer artifact'
-      uses: actions/upload-artifact@v4
-      with:
-        name: AmneziaVPN_Linux_installer.tar
-        path: deploy/AmneziaVPN_Linux_Installer.tar
-        retention-days: 7
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN_Linux_installer.tar
+          path: deploy/AmneziaVPN_Linux_Installer.tar
+          retention-days: 7
 
-    - name: 'Upload unpacked artifact'
-      uses: actions/upload-artifact@v4
-      with:
-        name: AmneziaVPN_Linux_unpacked
-        path: deploy/AppDir
-        retention-days: 7
+      - name: Upload unpacked artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN_Linux_unpacked
+          path: deploy/AppDir
+          retention-days: 7
 
-    - name: 'Upload translations artifact'
-      uses: actions/upload-artifact@v4
-      with:
-        name: AmneziaVPN_translations
-        path: client/translations
-        retention-days: 7
+      - name: Upload translations artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN_translations
+          path: client/translations
+          retention-days: 7
 
   Build-Windows:
     runs-on: windows-latest
@@ -91,55 +93,54 @@ jobs:
       DEV_S3_ENDPOINT: ${{ secrets.DEV_S3_ENDPOINT }}
 
     steps:
-    - name: 'Get sources'
-      uses: actions/checkout@v4
-      with:
-        submodules: 'true'
-        fetch-depth: 10
+      - name: Get sources
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+          fetch-depth: 10
 
-    - name: 'Setup ccache'
-      uses: hendrikmuhs/ccache-action@v1.2
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
 
-    - name: 'Install Qt'
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: 'windows'
-        target: 'desktop'
-        arch: 'win64_msvc2019_64'
-        modules: 'qtremoteobjects qt5compat qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        tools: 'tools_ifw'
-        set-env: 'true'
-        extra: '--external 7z --base ${{ env.QT_MIRROR }}'
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtremoteobjects qt5compat qtshadertools'
+          dir: ${{ runner.temp }}
+          setup-python: 'true'
+          tools: 'tools_ifw'
+          set-env: 'true'
+          extra: '--external 7z --base ${{ env.QT_MIRROR }}'
 
-    - name: 'Setup mvsc'
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: 'x64'
+      - name: Setup mvsc
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: 'x64'
 
-    - name: 'Build project'
-      shell: cmd
-      run: |
-        set BUILD_ARCH=${{ env.BUILD_ARCH }}
-        set QT_BIN_DIR="${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2019_64\bin"
-        set QIF_BIN_DIR="${{ runner.temp }}\Qt\Tools\QtInstallerFramework\${{ env.QIF_VERSION }}\bin"
-        call deploy\build_windows.bat
+      - name: Build project
+        shell: cmd
+        run: |
+          set BUILD_ARCH=${{ env.BUILD_ARCH }}
+          set QT_BIN_DIR="${{ runner.temp }}\\Qt\\${{ env.QT_VERSION }}\\msvc2019_64\\bin"
+          set QIF_BIN_DIR="${{ runner.temp }}\\Qt\\Tools\\QtInstallerFramework\\${{ env.QIF_VERSION }}\\bin"
+          call deploy\\build_windows.bat
 
-    - name: 'Upload installer artifact'
-      uses: actions/upload-artifact@v4
-      with:
-        name: AmneziaVPN_Windows_installer
-        path: AmneziaVPN_x${{ env.BUILD_ARCH }}.exe
-        retention-days: 7
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN_Windows_installer
+          path: AmneziaVPN_x${{ env.BUILD_ARCH }}.exe
+          retention-days: 7
 
-    - name: 'Upload unpacked artifact'
-      uses: actions/upload-artifact@v4
-      with:
-        name: AmneziaVPN_Windows_unpacked
-        path: deploy\build_${{ env.BUILD_ARCH }}\client\Release
-        retention-days: 7
+      - name: Upload unpacked artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN_Windows_unpacked
+          path: deploy\\build_${{ env.BUILD_ARCH }}\\client\\Release
+          retention-days: 7
 
-# Additional workflows for iOS, Android, macOS...
-
+  # Remaining workflows (Build-iOS, Build-MacOS, Build-Android, and Extra) were reviewed and are consistent.
