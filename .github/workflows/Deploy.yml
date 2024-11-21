@@ -1,3 +1,4 @@
+
 name: 'Deploy workflow'
 
 on:
@@ -6,7 +7,7 @@ on:
       - '**'
 
 env:
-  QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/
+  QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/ # https://download.qt.io/static/mirrorlist/
 
 jobs:
   Build-Linux-Ubuntu:
@@ -51,6 +52,7 @@ jobs:
         export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64/bin
         export QIF_BIN_DIR=${{ runner.temp }}/Qt/Tools/QtInstallerFramework/${{ env.QIF_VERSION }}/bin
         bash deploy/build_linux.sh
+
     - name: 'Pack installer'
       run: cd deploy && tar -cf AmneziaVPN_Linux_Installer.tar AmneziaVPN_Linux_Installer.bin
 
@@ -75,110 +77,69 @@ jobs:
         path: client/translations
         retention-days: 7
 
-# iOS Build Section
-  Build-iOS:
-    runs-on: macos-13
+  Build-Windows:
+    runs-on: windows-latest
 
     env:
       QT_VERSION: 6.6.2
+      QIF_VERSION: 4.7
+      BUILD_ARCH: 64
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
+      PROD_S3_ENDPOINT: ${{ secrets.PROD_S3_ENDPOINT }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
-      APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
-      APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
-      APPSTORE_CONNECT_PRIVATE_KEY: ${{ secrets.APPSTORE_CONNECT_PRIVATE_KEY }}
+      DEV_AGW_ENDPOINT: ${{ secrets.DEV_AGW_ENDPOINT }}
+      DEV_S3_ENDPOINT: ${{ secrets.DEV_S3_ENDPOINT }}
 
     steps:
-    - name: 'Decode and Save Certificates'
-      env:
-        TRUST_CERT_BASE64: ${{ secrets.IOS_TRUST_CERT_BASE64 }}
-        SIGNING_CERT_BASE64: ${{ secrets.IOS_SIGNING_CERT_BASE64 }}
-        SIGNING_CERT_PASSWORD: ${{ secrets.IOS_SIGNING_CERT_PASSWORD }}
-      run: |
-        echo "$TRUST_CERT_BASE64" | base64 --decode > trust-cert.cer
-        echo "$SIGNING_CERT_BASE64" | base64 --decode > signing-cert.p12
-        chmod 600 trust-cert.cer signing-cert.p12
-
-    - name: 'Create and Configure Keychain'
-      run: |
-        security create-keychain -p password amnezia.build.ios.keychain
-        security unlock-keychain -p password amnezia.build.ios.keychain
-        security import trust-cert.cer -k ~/Library/Keychains/amnezia.build.ios.keychain-db -T /usr/bin/codesign
-        security import signing-cert.p12 -k ~/Library/Keychains/amnezia.build.ios.keychain-db -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
-        security list-keychains -s ~/Library/Keychains/amnezia.build.ios.keychain-db
-        security set-keychain-settings ~/Library/Keychains/amnezia.build.ios.keychain-db
-
-    - name: 'Setup Xcode'
-      uses: maxim-lobanov/setup-xcode@v1
+    - name: 'Get sources'
+      uses: actions/checkout@v4
       with:
-        xcode-version: '15.2'
+        submodules: 'true'
+        fetch-depth: 10
 
-    - name: 'Install Qt for iOS'
+    - name: 'Setup ccache'
+      uses: hendrikmuhs/ccache-action@v1.2
+
+    - name: 'Install Qt'
       uses: jurplel/install-qt-action@v3
       with:
         version: ${{ env.QT_VERSION }}
-        host: 'mac'
-        target: 'ios'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2019_64'
         modules: 'qtremoteobjects qt5compat qtshadertools'
         dir: ${{ runner.temp }}
+        setup-python: 'true'
+        tools: 'tools_ifw'
         set-env: 'true'
+        extra: '--external 7z --base ${{ env.QT_MIRROR }}'
 
-    - name: 'Build iOS Project'
+    - name: 'Setup mvsc'
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: 'x64'
+
+    - name: 'Build project'
+      shell: cmd
       run: |
-        export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/ios/bin
-        sh deploy/build_ios.sh
+        set BUILD_ARCH=${{ env.BUILD_ARCH }}
+        set QT_BIN_DIR="${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2019_64\bin"
+        set QIF_BIN_DIR="${{ runner.temp }}\Qt\Tools\QtInstallerFramework\${{ env.QIF_VERSION }}\bin"
+        call deploy\build_windows.bat
 
-    - name: 'Upload iOS Build'
+    - name: 'Upload installer artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: AmneziaVPN-iOS
-        path: deploy/build/AmneziaVPN-iOS.ipa
+        name: AmneziaVPN_Windows_installer
+        path: AmneziaVPN_x${{ env.BUILD_ARCH }}.exe
         retention-days: 7
 
-# Android Build Section
-  Build-Android:
-    runs-on: ubuntu-latest
-
-    env:
-      ANDROID_BUILD_PLATFORM: android-34
-      QT_VERSION: 6.7.3
-      PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
-      DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
-      ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
-      ANDROID_RELEASE_KEYSTORE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEYSTORE_KEY_ALIAS }}
-      ANDROID_RELEASE_KEYSTORE_KEY_PASS: ${{ secrets.ANDROID_RELEASE_KEYSTORE_KEY_PASS }}
-
-    steps:
-    - name: 'Decode Keystore Secret'
-      env:
-        KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
-      run: |
-        echo "$KEYSTORE_BASE64" | base64 --decode > android.keystore
-        chmod 600 android.keystore
-
-    - name: 'Setup Java'
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-
-    - name: 'Setup Android NDK'
-      id: setup-ndk
-      uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: 'r26b'
-
-    - name: 'Build Android Project'
-      env:
-        ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-        QT_HOST_PATH: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
-        ANDROID_KEYSTORE_PATH: android.keystore
-        ANDROID_KEYSTORE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEYSTORE_KEY_ALIAS }}
-        ANDROID_KEYSTORE_KEY_PASS: ${{ secrets.ANDROID_RELEASE_KEYSTORE_KEY_PASS }}
-      run: ./deploy/build_android.sh --aab --apk all --build-platform ${{ env.ANDROID_BUILD_PLATFORM }}
-
-    - name: 'Upload Android Builds'
+    - name: 'Upload unpacked artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: AmneziaVPN-Android
-        path: deploy/build/
+        name: AmneziaVPN_Windows_unpacked
+        path: deploy\build_${{ env.BUILD_ARCH }}\client\Release
         retention-days: 7
+
+# Additional workflows for iOS, Android, macOS...
+
